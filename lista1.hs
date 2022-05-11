@@ -1,18 +1,18 @@
 concatena :: [a] -> [a] -> [a]
 
 concatena [] ys =
-	ys
+ ys
 concatena (x:xs) ys = 
-	x : concatena xs ys
+ x : concatena xs ys
 
 --
 pertence :: Eq a => a -> [a] -> Bool
 
 pertence _ [] =
-	False
+ False
 pertence t (x:xs) =
-	if x == t then True 
-	else pertence t xs
+ if x == t then True 
+ else pertence t xs
 
 --
 intersecao :: Eq a => [a] -> [a] -> [a]
@@ -62,16 +62,15 @@ tamanho (x:xs) =
   1 + tamanho xs
 
 
---binParaInt ['1','0','1'] 
---como fazer '101' ?
+--
 binParaInt :: String -> Int 
 
 binParaInt [] = 
-	0
+ 0
 binParaInt ('0':xs) = 
-	binParaInt xs
+ binParaInt xs
 binParaInt ('1':xs) =
-	2^tamanho xs + binParaInt xs
+ 2^tamanho xs + binParaInt xs
 
 --
 intParaBin :: Int -> String
@@ -94,15 +93,17 @@ menorValor (x:y:xs) =
   else
    menorValor (y:xs)
 
---
---era removerPrimeiro::Eq a => [a] -> a -> [a] pq?
-removerPrimeiro :: Eq a => [a] -> [a]
-removerPrimeiro [] = 
+-- remove a primeira ocorrencia de um elemento da lista
+removerPrimeiro :: Eq a => [a] -> a -> [a]
+removerPrimeiro [] _ = 
  []
-removerPrimeiro (x:xs) =
- xs
+removerPrimeiro (x:xs) a =
+ if x == a then
+  xs
+ else
+  x : removerPrimeiro xs a
 
---
+
 --ordem crescente
 ordenar :: Ord a => [a] -> [a]
 ordenar [x] =
