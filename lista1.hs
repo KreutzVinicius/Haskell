@@ -62,7 +62,7 @@ tamanho (x:xs) =
   1 + tamanho xs
 
 
---
+--5f
 binParaInt :: String -> Int 
 
 binParaInt [] = 
@@ -126,3 +126,26 @@ impares (x:xs) =
  x : impares xs
  else
   impares xs
+
+escaneia_esq :: (b -> a -> b) -> b -> [a] -> [b]
+escaneia_esq f k [] =
+    [k]
+escaneia_esq f k (x:xs) =
+    k : escaneia_esq f (k `f` x) xs
+
+
+escaneia_dir :: (a -> b -> b) -> b -> [a] -> [b]
+escaneia_dir f k [] =
+    [k]
+escaneia_dir f k (x:xs) =
+    let ys@(y:_) = escaneia_dir f k xs in
+    f x y : ys
+
+tomaEnquanto :: (a -> Bool) -> [a] -> [a]
+tomaEnquanto f [] =
+    []
+tomaEnquanto f (x:xs) = 
+    if f(x) == True then
+        x : tomaEnquanto f xs
+    else
+        []
