@@ -1,151 +1,134 @@
+-- ghci lista1
 concatena :: [a] -> [a] -> [a]
-
 concatena [] ys =
- ys
-concatena (x:xs) ys = 
- x : concatena xs ys
+  ys
+concatena (x : xs) ys =
+  x : concatena xs ys
 
 --
 pertence :: Eq a => a -> [a] -> Bool
-
 pertence _ [] =
- False
-pertence t (x:xs) =
- if x == t then True 
- else pertence t xs
+  False
+pertence t (x : xs) =
+  if x == t
+    then True
+    else pertence t xs
 
 --
 intersecao :: Eq a => [a] -> [a] -> [a]
-
 intersecao [] ys =
- []
-intersecao xs [] = 
- []
-intersecao (x:xs) ys= 
- if pertence x ys then x : intersecao xs ys
- else intersecao xs ys
- 
+  []
+intersecao xs [] =
+  []
+intersecao (x : xs) ys =
+  if pertence x ys
+    then x : intersecao xs ys
+    else intersecao xs ys
+
 --
 inverso :: [a] -> [a]
-
-inverso [] = 
+inverso [] =
   []
-inverso (x:xs) =
+inverso (x : xs) =
   concatena (inverso xs) [x]
-  
--- 
-primeiros :: Int -> [a] -> [a]
 
-primeiros _ [] = 
- []
+--
+primeiros :: Int -> [a] -> [a]
+primeiros _ [] =
+  []
 primeiros 0 x =
- []
-primeiros n (x:xs) =
- x : primeiros (n-1) xs
- 
+  []
+primeiros n (x : xs) =
+  x : primeiros (n -1) xs
+
 --
 ultimos :: Int -> [a] -> [a]
- 
-ultimos _ [] = 
+ultimos _ [] =
   []
 ultimos 0 x =
   []
 ultimos n x =
-  inverso (primeiros n (inverso x))  
+  inverso (primeiros n (inverso x))
 
 --
 tamanho :: [a] -> Int
-
 tamanho [] =
   0
-tamanho (x:xs) = 
+tamanho (x : xs) =
   1 + tamanho xs
 
-
 --5f
-binParaInt :: String -> Int 
-
-binParaInt [] = 
- 0
-binParaInt ('0':xs) = 
- binParaInt xs
-binParaInt ('1':xs) =
- 2^tamanho xs + binParaInt xs
+binParaInt :: String -> Int
+binParaInt [] =
+  0
+binParaInt ('0' : xs) =
+  binParaInt xs
+binParaInt ('1' : xs) =
+  2 ^ tamanho xs + binParaInt xs
 
 --
 intParaBin :: Int -> String
-
 intParaBin 0 = []
 intParaBin x =
- if (x `mod` 2) == 0 then
-  '0': intParaBin (x`div`2)
-  else
-   '1': intParaBin (x`div`2)
-
+  if (x `mod` 2) == 0
+    then '0' : intParaBin (x `div` 2)
+    else '1' : intParaBin (x `div` 2)
 
 --
 menorValor :: Ord a => [a] -> a
 menorValor [x] =
- x
-menorValor (x:y:xs) =
- if x < y then 
-  menorValor (x:xs)
-  else
-   menorValor (y:xs)
+  x
+menorValor (x : y : xs) =
+  if x < y
+    then menorValor (x : xs)
+    else menorValor (y : xs)
 
 -- remove a primeira ocorrencia de um elemento da lista
 removerPrimeiro :: Eq a => [a] -> a -> [a]
-removerPrimeiro [] _ = 
- []
-removerPrimeiro (x:xs) a =
- if x == a then
-  xs
- else
-  x : removerPrimeiro xs a
-
+removerPrimeiro [] _ =
+  []
+removerPrimeiro (x : xs) a =
+  if x == a
+    then xs
+    else x : removerPrimeiro xs a
 
 --ordem crescente
 ordenar :: Ord a => [a] -> [a]
 ordenar [x] =
- [x]
-ordenar (x:xs) = 
- if x == menorValor (x:xs) then
-  x: ordenar xs
-  else
-   ordenar (concatena xs [x]) 
+  [x]
+ordenar (x : xs) =
+  if x == menorValor (x : xs)
+    then x : ordenar xs
+    else ordenar (concatena xs [x])
 
 --
 impares :: [Int] -> [Int]
-impares [x] =
- if x `mod` 2 == 1 then
- [x]
- else
+impares [] =
   []
-impares (x:xs) = 
- if x `mod` 2 == 1 then
- x : impares xs
- else
-  impares xs
+impares [x] =
+  if x `mod` 2 == 1 then [x] else []
+impares (x : xs) =
+  if x `mod` 2 == 1
+    then x : impares xs
+    else impares xs
 
-escaneia_esq :: (b -> a -> b) -> b -> [a] -> [b]
-escaneia_esq f k [] =
-    [k]
-escaneia_esq f k (x:xs) =
-    k : escaneia_esq f (k `f` x) xs
+escaneiaEsq :: (b -> a -> b) -> b -> [a] -> [b]
+escaneiaEsq f k [] =
+  [k]
+escaneiaEsq f k (x : xs) =
+  k : escaneiaEsq f (k `f` x) xs
 
-
-escaneia_dir :: (a -> b -> b) -> b -> [a] -> [b]
-escaneia_dir f k [] =
-    [k]
-escaneia_dir f k (x:xs) =
-    let ys@(y:_) = escaneia_dir f k xs in
-    f x y : ys
+escaneiaDir :: (a -> b -> b) -> b -> [a] -> [b]
+escaneiaDir f k [] =
+  [k]
+escaneiaDir f k (x : xs) =
+  let ys@(y : _) = escaneiaDir f k xs
+   in f x y : ys
 
 tomaEnquanto :: (a -> Bool) -> [a] -> [a]
 tomaEnquanto f [] =
-    []
-tomaEnquanto f (x:xs) = 
-    if f(x) == True then
-        x : tomaEnquanto f xs
-    else
-        []
+  []
+tomaEnquanto f (x : xs) =
+  if f (x) == True
+    then x : tomaEnquanto f xs
+    else []
