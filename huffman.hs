@@ -1,73 +1,128 @@
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as C8
-import Data.List
-import qualified Data.Map.Strict as Map
-import Data.Ord
+import Data.List (sortBy)
+import Data.Map (Map, empty, insert, lookup, singleton, toList, union)
+import Data.Maybe (fromJust, fromMaybe, isNothing)
 
-data HuffmanTree = Leaf Char Int | Node Int HuffmanTree HuffmanTree deriving (Show)
+-- Datatype representing a node in a Huffman Tree
+data HuffmanNode
+  = Leaf Int Char
+  | Node Int HuffmanNode HuffmanNode
+  deriving (Show)
 
--- Função auxiliar para contar a frequência dos caracteres em uma string
-countFrequency :: String -> Map.Map Char Int
-countFrequency = Map.fromListWith (+) . map (\c -> (c, 1))
-
--- Função para construir a árvore de Huffman
-buildHuffmanTree :: Map.Map Char Int -> HuffmanTree
-buildHuffmanTree freqMap = buildTree $ map (\(c, f) -> (Leaf c f, f)) $ Map.toList freqMap
-  where
-    buildTree [(_, f)] = Leaf '\0' f
-    buildTree xs =
-      let (a, b) = splitAt 2 $ sortBy (comparing snd) xs
-          node = Node (snd (head a) + snd (head b)) (buildTree a) (buildTree b)
-       in buildTree $ insertBy (comparing snd) (node, 0) (tail b)
-
--- Função para gerar a tabela de codificação
-generateEncodingTable :: HuffmanTree -> Map.Map Char String
-generateEncodingTable tree = Map.fromList $ generateCodes "" tree
-  where
-    generateCodes _ (Leaf c _) = [(c, "")]
-    generateCodes code (Node _ left right) = generateCodes (code ++ "0") left ++ generateCodes (code ++ "1") right
-
--- Função para compactar uma string usando a codificação de Huffman
-compress :: String -> String
-compress input = concatMap (\c -> Map.findWithDefault "" c encodingTable) input
-  where
-    freqMap = countFrequency input
-    huffmanTree = buildHuffmanTree freqMap
-    encodingTable = generateEncodingTable huffmanTree
-
--- Função para descompactar uma string usando a codificação de Huffman
-decompress :: String -> String
-decompress input = go input huffmanTree ""
-  where
-    huffmanTree = buildHuffmanTree $ countFrequency input
-    go [] _ acc = acc
-    go (x : xs) (Leaf c _) acc = go (x : xs) huffmanTree (acc ++ [c])
-    go (x : xs) (Node _ left right) acc = if x == '0' then go xs left acc else go xs right acc
-
--- Função principal
-main :: IO ()
 main = do
-  -- Nome do arquivo de entrada
-  let inputFile = "./text.txt"
-  inputContent <- readFile inputFile
-  putStrLn inputContent
+  encodeArchive "input.txt" "bin.txt"
+  decodeArchive "bin.txt" "output.txt"
 
-  -- Nome do arquivo descompactado
-  let decompressedFile = "./text-descompactado.txt"
+encodeArchive :: String -> String -> IO ()
+encodeArchive input output = do
+  message <- readFile input
+  let tree = computeHuffmanTreeFromString message
+  let encoded = huffmanEncode message
+  let serializedTree = serialize tree
+  writeFile output (serializedTree ++ "\n" ++ encoded)
 
-  let compressed = compress inputContent
-  putStrLn compressed
+decodeArchive :: String -> String -> IO ()
+decodeArchive input output = do
+  contents <- readFile input
+  let (serializedTree : encoded : _) = lines contents
+  let tree = deserialize serializedTree
+  let decoded = huffmanDecode encoded tree
+  writeFile output decoded
 
-  -- Nome do arquivo compactado
-  let compressedFile = "./text.bin"
-  writeFile compressedFile compressed
-  compressedData <- readFile compressedFile
+huffmanEncode :: String -> String
+huffmanEncode message = concatMap (\c -> fromJust (Data.Map.lookup c huffmanMap)) message
+  where
+    huffmanMap = huffmanTreeToMap (computeHuffmanTreeFromString message)
 
-  -- Descompactar o conteúdo
-  let decompressed = decompress compressedData
-  putStrLn decompressed
+huffmanDecode :: String -> HuffmanNode -> String
+huffmanDecode toDecode tree = huffmanDecodeLoop [] toDecode tree tree
 
-  -- Escrever o conteúdo descompactado no arquivo de saída
-  writeFile decompressedFile decompressed
+huffmanDecodeLoop :: String -> String -> HuffmanNode -> HuffmanNode -> String
+huffmanDecodeLoop result (x : xs) root (Node _ lChild rChild)
+  | x == '0' = huffmanDecodeLoop result xs root lChild
+  | x == '1' = huffmanDecodeLoop result xs root rChild
+huffmanDecodeLoop result (x : xs) root (Leaf _ char) =
+  huffmanDecodeLoop (result ++ [char]) (x : xs) root root
+huffmanDecodeLoop result [] root node =
+  case node of
+    Leaf _ char -> result ++ [char]
+    _ -> error "Expected a leaf node"
 
-  putStrLn "Compactação e descompactação concluídas com sucesso!"
+nodeValue :: HuffmanNode -> Int
+nodeValue (Leaf val _) = val
+nodeValue (Node val _ _) = val
+
+leafChar :: HuffmanNode -> Char
+leafChar (Leaf _ val) = val
+
+leftChild :: HuffmanNode -> HuffmanNode
+leftChild (Node _ child _) = child
+
+rightChild :: HuffmanNode -> HuffmanNode
+rightChild (Node _ _ child) = child
+
+computeHuffmanTreeFromString :: String -> HuffmanNode
+computeHuffmanTreeFromString message = buildHuffmanTree (occurrencesToNodes (countCharOccurrence message))
+
+huffmanTreeToMap :: HuffmanNode -> Map Char String
+huffmanTreeToMap node = huffmanTreeToMapLoop node []
+
+huffmanTreeToMapLoop :: HuffmanNode -> String -> Map Char String
+huffmanTreeToMapLoop (Node _ lChild rChild) string = Data.Map.union mapLeft mapRight
+  where
+    mapLeft = huffmanTreeToMapLoop lChild (string ++ "0")
+    mapRight = huffmanTreeToMapLoop rChild (string ++ "1")
+huffmanTreeToMapLoop (Leaf _ char) string = Data.Map.singleton char string
+
+buildHuffmanTree :: [HuffmanNode] -> HuffmanNode
+buildHuffmanTree nodes
+  | length nodes == 1 = head nodes
+  | otherwise =
+    buildHuffmanTree (drop 2 (insertNode 0 (combineNodes (head nodes) (nodes !! 1)) nodes))
+
+insertNode :: Int -> HuffmanNode -> [HuffmanNode] -> [HuffmanNode]
+insertNode index node nodes
+  | index <= 0 =
+    insertNode 1 node nodes
+  | nodeValue (nodes !! (index - 1)) >= nodeValue node =
+    let (ys, zs) = splitAt (index - 1) nodes in ys ++ [node] ++ zs
+  | index >= length nodes =
+    nodes ++ [node]
+  | otherwise =
+    insertNode (index + 1) node nodes
+
+combineNodes :: HuffmanNode -> HuffmanNode -> HuffmanNode
+combineNodes nodeA nodeB = Node (nodeValue nodeA + nodeValue nodeB) nodeA nodeB
+
+occurrencesToNodes :: [(Char, Int)] -> [HuffmanNode]
+occurrencesToNodes = map (\x -> Leaf (snd x) (fst x))
+
+compareOccurrences :: (Char, Int) -> (Char, Int) -> Ordering
+compareOccurrences (k1, v1) (k2, v2)
+  | v1 > v2 = GT
+  | v1 < v2 = LT
+  | v1 == v2 = compare k1 k2
+
+countCharOccurrence :: String -> [(Char, Int)]
+countCharOccurrence message =
+  sortBy compareOccurrences (toList (countCharOccurrenceLoop message empty))
+
+countCharOccurrenceLoop :: String -> Map Char Int -> Map Char Int
+countCharOccurrenceLoop [] map = map
+countCharOccurrenceLoop (x : xs) map
+  | isNothing entry = countCharOccurrenceLoop xs (insert x 1 map)
+  | otherwise = countCharOccurrenceLoop xs (insert x (fromJust entry + 1) map)
+  where
+    entry = Data.Map.lookup x map
+
+serialize :: HuffmanNode -> String
+serialize (Leaf _ c) = '1' : c : []
+serialize (Node _ left right) = '0' : serialize left ++ serialize right
+
+deserialize :: String -> HuffmanNode
+deserialize s = fst (deserializeHelper s)
+  where
+    deserializeHelper ('1' : c : xs) = (Leaf 0 c, xs)
+    deserializeHelper ('0' : xs) =
+      let (left, xs') = deserializeHelper xs
+          (right, xs'') = deserializeHelper xs'
+       in (Node 0 left right, xs'')
