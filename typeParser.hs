@@ -1,12 +1,15 @@
 module Main where
-
 import Text.Parsec
 import qualified Text.Parsec.Token as L
 import Text.Parsec.Language (emptyDef)
--- import Type
 import Data.Char (isLower)
 import Data.List ( (\\), nub )
 import Control.Monad.Identity
+import Control.Monad (foldM)
+import Control.Monad.Except
+import Control.Monad.State qualified as CMState
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 
 -- Identificador de variável
 type Id = String
@@ -56,7 +59,7 @@ iniCont = [
     "True" :>: TCon "Bool",
     "False" :>: TCon "Bool"
     ]
-    
+
 -- Definindo a linguagem
 langDef :: L.LanguageDef ()
 langDef = emptyDef {
@@ -98,21 +101,25 @@ varOrCons = do
   i <- identifier
   return $ if isLower (head i) then Var i else Const i
 
-litInteger = do {n <- integer; return $ LitInt n}
+litInteger :: ParsecT String () Identity Literal
+litInteger = LitInt <$> integer
 
-litBool = do {reserved "True"; return $ LitBool True}
-       <|> do {reserved "False"; return $ LitBool False}
+litBool :: ParsecT String () Identity Literal
+litBool =
+  (reserved "True" >> return (LitBool True))
+    <|> (reserved "False" >> return (LitBool False))
 
 recLit = litBool <|> litInteger
 
-lit = do {Lit <$> recLit}
+-- Parsing de expressões literais
+lit :: ParsecT String () Identity Expr
+lit = Lit <$> (litBool <|> litInteger)
 
 lamAbs = do
     symbol "\\"
     i <- identifier
     reservedOp "."
-    e <- expr
-    return (Lam i e)
+    Lam i <$> expr
 
 recIf = do
     reserved "if"
@@ -187,6 +194,168 @@ parseNonApp = try (parens expr)  -- (E)
 
 parseExpr = parse (whiteSpace >> expr) ""
 
+-- Inferidor de tipos
+
+type Subst = Map Id SimpleType
+
+nullSubst :: Subst
+nullSubst = Map.empty
+
+(+->) :: Id -> SimpleType -> Subst
+(+->) = Map.singleton
+
+class Types a where
+  apply :: Subst -> a -> a
+  tv :: a -> [Id]
+
+instance Types SimpleType where
+  apply s (TVar n) = Map.findWithDefault (TVar n) n s
+  apply s (TArr l r) = TArr (apply s l) (apply s r)
+  apply s (TApp l r) = TApp (apply s l) (apply s r)
+  apply _ t = t
+
+  tv (TVar n) = [n]
+  tv (TArr l r) = tv l ++ tv r
+  tv (TApp l r) = tv l ++ tv r
+  tv _ = []
+
+instance (Types a) => Types [a] where
+  apply s = map (apply s)
+  tv = nub . concatMap tv
+
+compose :: Subst -> Subst -> Subst
+s1 `compose` s2 = Map.map (apply s1) s2 `Map.union` s1
+
+type TypeEnv = Map Id SimpleType
+
+remove :: TypeEnv -> Id -> TypeEnv
+remove env var = Map.delete var env
+
+instance Types TypeEnv where
+  apply s env = Map.map (apply s) env
+  tv env = tv $ Map.elems env
+
+type TI a = ExceptT String (CMState.State TIState) a
+
+data TIState = TIState {tiSupply :: Int}
+
+newTyVar :: String -> TI SimpleType
+newTyVar prefix = do
+  s <- CMState.get
+  CMState.put s {tiSupply = tiSupply s + 1}
+  return $ TVar (prefix ++ show (tiSupply s))
+
+instantiate :: SimpleType -> TI SimpleType
+instantiate (TGen n) = newTyVar "a"
+instantiate (TArr t1 t2) = TArr <$> instantiate t1 <*> instantiate t2
+instantiate (TApp t1 t2) = TApp <$> instantiate t1 <*> instantiate t2
+instantiate t = return t
+
+mgu :: SimpleType -> SimpleType -> TI Subst
+mgu (TArr l r) (TArr l' r') = do
+  s1 <- mgu l l'
+  s2 <- mgu (apply s1 r) (apply s1 r')
+  return (s2 `compose` s1)
+mgu (TVar u) t = varBind u t
+mgu t (TVar u) = varBind u t
+mgu (TApp l r) (TApp l' r') = do
+  s1 <- mgu l l'
+  s2 <- mgu (apply s1 r) (apply s1 r')
+  return (s2 `compose` s1)
+mgu (TCon c1) (TCon c2)
+  | c1 == c2 = return nullSubst
+mgu t1 t2 =
+  throwError $
+    "types do not unify: "
+      ++ show t1
+      ++ " vs. "
+      ++ show t2
+
+varBind :: Id -> SimpleType -> TI Subst
+varBind u t
+  | t == TVar u = return nullSubst
+  | u `elem` tv t =
+      throwError $
+        "occurs check fails: "
+          ++ u
+          ++ " vs. "
+          ++ show t
+  | otherwise = return (u +-> t)
+
+ti :: TypeEnv -> Expr -> TI (Subst, SimpleType)
+ti env (Var n) =
+  case Map.lookup n env of
+    Nothing -> throwError $ "unbound variable: " ++ n
+    Just sigma -> do
+      t <- instantiate sigma
+      return (nullSubst, t)
+ti env (App e1 e2) = do
+  (s1, t1) <- ti env e1
+  (s2, t2) <- ti (apply s1 env) e2
+  tv' <- newTyVar "a"
+  s3 <- mgu (apply s2 t1) (TArr t2 tv')
+  return (s3 `compose` s2 `compose` s1, apply s3 tv')
+ti env (Lam n e) = do
+  tv' <- newTyVar "a"
+  let env' = remove env n
+  (s1, t1) <- ti (env' `Map.union` (n +-> tv')) e
+  return (s1, TArr (apply s1 tv') t1)
+ti env (Lit (LitInt _)) = return (nullSubst, TCon "Int")
+ti env (Lit (LitBool _)) = return (nullSubst, TCon "Bool")
+ti env (If e1 e2 e3) = do
+  (s1, t1) <- ti env e1
+  (s2, t2) <- ti (apply s1 env) e2
+  (s3, t3) <- ti (apply s2 env) e3
+  s4 <- mgu t1 (TCon "Bool")
+  s5 <- mgu t2 t3
+  return (s5 `compose` s4 `compose` s3 `compose` s2 `compose` s1, apply s5 t3)
+ti env (Let (x, e1) e2) = do
+  (s1, t1) <- ti env e1
+  let env' = remove env x
+  let t' = generalize (apply s1 env) t1
+  (s2, t2) <- ti (env' `Map.union` (x +-> t')) e2
+  return (s2 `compose` s1, t2)
+ti env (Case e ps) = do
+  (s1, t1) <- ti env e
+  (s2, t2) <-
+    foldM
+      ( \(subst, t) (p, e') -> do
+          (s3, env') <- tiPat (apply subst env) p
+          (s4, t') <- ti (env' `Map.union` apply s3 env) e'
+          s5 <- mgu t t'
+          return (s5 `compose` s4 `compose` s3 `compose` subst, t')
+      )
+      (s1, TVar "")
+      ps
+  return (s2, t2)
+
+tiPat :: TypeEnv -> Pat -> TI (Subst, TypeEnv)
+tiPat env (PVar n) = do
+  tv' <- newTyVar "a"
+  return (nullSubst, Map.insert n tv' env)
+tiPat env (PLit (LitInt _)) = return (nullSubst, env)
+tiPat env (PLit (LitBool _)) = return (nullSubst, env)
+tiPat env (PCon n ps) = do
+  tv' <- newTyVar "a"
+  (s1, env') <-
+    foldM
+      ( \(subst, env'') p -> do
+          (s2, env''') <- tiPat (apply subst env'') p
+          return (s2 `compose` subst, env''' `Map.union` env'')
+      )
+      (nullSubst, env)
+      ps
+  return (s1, env' `Map.union` env)
+
+generalize :: TypeEnv -> SimpleType -> SimpleType
+generalize env t = foldr TArr t (map TVar (tv t \\ tv env))
+
+runTI :: TI a -> Either String a
+runTI t = CMState.evalState (runExceptT t) (TIState 0)
+
+runInfer :: TypeEnv -> Expr -> Either String SimpleType
+runInfer env e = CMState.evalState (runExceptT (snd <$> ti env e)) (TIState 0)
+
 -- Função para testar o parser
 testParser :: [String] -> IO ()
 testParser = mapM_ (\s -> case parseExpr s of
@@ -194,9 +363,10 @@ testParser = mapM_ (\s -> case parseExpr s of
                              Right expr -> putStrLn $ "Parsed " ++ s ++ ": " ++ show expr)
 
 
+main :: IO ()
 main = do
 
-
+    let typeEnv = Map.fromList [(i, t) | (i :>: t) <- iniCont]
     let testCases =
                 [
                  "let x = 5 in x"  -- Let simples
@@ -228,7 +398,7 @@ main = do
 
                 -- Lambda com Múltiplos Argumentos
                 , "\\x. x"  -- Lambda simples
-                , "\\x \\y x y"  -- Lambda com dois argumentos
+                , "\\x. \\y. x y"  -- Lambda com dois argumentos
                 , "\\x. \\y. \\z.  x (y z)"  -- Lambda com três argumentos
 
                 -- Expressões com Parênteses Aninhados
@@ -248,6 +418,13 @@ main = do
                 , "let b = True in if b then 1 else 0"  -- Let com booleano
 
                 ]
-    testParser testCases
-
+    -- testParser testCases
+    mapM_ (\exprStr ->
+        case parseExpr exprStr of
+        Left err -> putStrLn $ "Error parsing '" ++ exprStr ++ "': " ++ show err
+        Right expr ->
+            case runInfer typeEnv expr of
+            Left err -> putStrLn $ "Error inferring type for '" ++ exprStr ++ "': " ++ err
+            Right t -> putStrLn $ "Expression: '" ++ exprStr ++ "' has type: " ++ show t
+        ) testCases
 
