@@ -28,12 +28,12 @@ data Literal = LitInt Integer
 -- Expressões (Expr)
 data Expr = Var Id
           | Const Id
-          | App Expr Expr
           | Lam Id Expr
+          | App Expr Expr
+          | Let (Id, Expr) Expr
           | Lit Literal
           | If Expr Expr Expr
           | Case Expr [(Pat, Expr)]
-          | Let (Id, Expr) Expr
           deriving (Eq, Show)
 
 -- Tipos Simples (SimpleType)
@@ -328,6 +328,13 @@ ti env (Case e ps) = do
       (s1, TVar "")
       ps
   return (s2, t2)
+ti env (Const n) =
+  case Map.lookup n env of
+    Nothing -> throwError $ "unbound constant: " ++ n
+    Just sigma -> do
+      t <- instantiate sigma
+      return (nullSubst, t)
+
 
 tiPat :: TypeEnv -> Pat -> TI (Subst, TypeEnv)
 tiPat env (PVar n) = do
@@ -372,7 +379,7 @@ main = do
                  "let x = 5 in x"  -- Let simples
                 , "let x = True in if x then 1 else 0"  -- Let com If
                 , "if True then 1 else 0"  -- If simples
-                , "if False then 5 else 10"  -- If com valor diferente
+                , "if False then False else True"  -- If com bool
                 , "case x of {True -> 1; False -> 0}"  -- Case simples
                 , "f x"  -- Aplicação de função simples
                 , "(f x) y"  -- Aplicação de função encadeada
@@ -425,6 +432,6 @@ main = do
         Right expr ->
             case runInfer typeEnv expr of
             Left err -> putStrLn $ "Error inferring type for '" ++ exprStr ++ "': " ++ err
-            Right t -> putStrLn $ "Expression: '" ++ exprStr ++ "' has type: " ++ show t
+            Right t -> putStrLn $  exprStr ++ " has type: " ++ show t
         ) testCases
 
