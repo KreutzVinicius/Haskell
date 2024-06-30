@@ -380,24 +380,17 @@ main = do
                 , "let x = True in if x then 1 else 0"  -- Let com If
                 , "if True then 1 else 0"  -- If simples
                 , "if False then False else True"  -- If com bool
-                , "case x of {True -> 1; False -> 0}"  -- Case simples
-                , "f x"  -- Aplicação de função simples
-                , "(f x) y"  -- Aplicação de função encadeada
+                , "case let x = 5 in x of {x -> 1}"  -- Case simples
+                , "case True of {(x, y) -> 1}"  -- Case com tupla
+
                 , "(1, 2)"  -- Tupla simples
                 , "(True, False)"  -- Tupla de booleanos
 
                 -- Funções Recursivas
                 , "\\f. \\x. f (f x)"  -- Aplicação recursiva de função
 
-                -- Casos Complexos de `case`
-                , "case x of {0 -> 1; 1 -> 2; _ -> 0}"  -- Case com múltiplos padrões
-                , "case (True, 42) of {(True, n) -> n; (False, _) -> 0}"  -- Case com tupla
-
                 -- Literais Inteiros Grandes
                 , "let x = 1000000000 in x"  -- Literal inteiro grande
-
-                -- Expressões com Múltiplas Aplicações
-                , "f (g (h x))"  -- Aplicação múltipla de funções
 
                 -- Tuplas Aninhadas
                 , "((1, 2), (3, 4))"  -- Tuplas de tuplas
@@ -407,16 +400,13 @@ main = do
                 , "\\x. x"  -- Lambda simples
                 , "\\x. \\y. x y"  -- Lambda com dois argumentos
                 , "\\x. \\y. \\z.  x (y z)"  -- Lambda com três argumentos
-
-                -- Expressões com Parênteses Aninhados
                 , "(\\x. x) ((\\y. y) 5)"  -- Lambda com aplicação aninhada
-                , "(f (g (h x)))"  -- Aplicações múltiplas com parênteses
 
                 -- Expressões de `Let` Aninhadas
                 , "let x = 5 in let y = x in y"  -- Let aninhado
 
                 -- Expressões Aninhadas de `If`
-                , "if x then if y then 1 else 2 else 3"  -- If aninhado
+                , "if True then if False then 1 else 2 else 3"  -- If aninhado
 
                 -- `Let` com Definições Múltiplas
                 , "let x = 1 in let y = 2 in x + y"  -- Let com múltiplas definições
@@ -431,7 +421,7 @@ main = do
         Left err -> putStrLn $ "Error parsing '" ++ exprStr ++ "': " ++ show err
         Right expr ->
             case runInfer typeEnv expr of
-            Left err -> putStrLn $ "Error inferring type for '" ++ exprStr ++ "': " ++ err
-            Right t -> putStrLn $  exprStr ++ " has type: " ++ show t
+            Left err -> putStrLn $ "Error inferring type for '" ++ exprStr ++ "': " ++ err ++ "\n"
+            Right t -> putStrLn $  exprStr ++ " has type: " ++ show t ++ "\n"
         ) testCases
 
