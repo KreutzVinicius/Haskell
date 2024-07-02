@@ -44,6 +44,7 @@ data SimpleType = TVar Id
                 | TGen Int
                 deriving Eq
 
+-- instância Show para a representação dos tipos como String
 instance Show SimpleType where
     show (TVar varId) = varId
     show (TArr t1 t2) = "(" ++ show t1 ++ " -> " ++ show t2 ++ ")"
@@ -72,9 +73,11 @@ langDef = emptyDef {
     L.reservedOpNames = [".","=", "->"]
 }
 
+-- analisador léxico
 lexer :: L.TokenParser ()
 lexer = L.makeTokenParser langDef
 
+-- funções auxiliares do analisador léxico
 identifier = L.identifier lexer
 reserved = L.reserved lexer
 reservedOp = L.reservedOp lexer
@@ -83,7 +86,7 @@ integer = L.integer lexer
 symbol = L.symbol lexer
 whiteSpace = L.whiteSpace lexer
 
--- Parsing expressions
+-- parser de expressões
 expr :: ParsecT String () Identity Expr
 expr = try lamAbs
    <|> try recLet
@@ -139,10 +142,13 @@ recLet = do
     reserved "in"
     Let (i, e1) <$> expr
 
+-- Parsing de variaveis
 pvar i = do {return $ PVar i}
 
+-- Parsing de construtores
 pcon i = do {PCon i <$> pats}
 
+-- Parsing de tuplas
 pconTup = parens (do {p1 <- pat; symbol ","; p2 <- pat; return $ PCon "(,)" [p1, p2]})
 
 pVarOrPCon = do
@@ -201,11 +207,14 @@ type Subst = Map Id SimpleType
 nullSubst :: Subst
 nullSubst = Map.empty
 
+-- Substituição de variáveis
 (+->) :: Id -> SimpleType -> Subst
 (+->) = Map.singleton
 
 class Types a where
+  -- Aplica uma substituição a um tipo
   apply :: Subst -> a -> a
+  -- Retorna a lista de variáveis de tipo livres (não ligadas) em um tipo
   tv :: a -> [Id]
 
 instance Types SimpleType where
@@ -251,6 +260,7 @@ instantiate (TArr t1 t2) = TArr <$> instantiate t1 <*> instantiate t2
 instantiate (TApp t1 t2) = TApp <$> instantiate t1 <*> instantiate t2
 instantiate t = return t
 
+-- unificador de tipos (most general unifier)
 mgu :: SimpleType -> SimpleType -> TI Subst
 mgu (TArr l r) (TArr l' r') = do
   s1 <- mgu l l'
@@ -282,6 +292,8 @@ varBind u t
           ++ show t
   | otherwise = return (u +-> t)
 
+
+-- inferencia de tipos
 ti :: TypeEnv -> Expr -> TI (Subst, SimpleType)
 ti env (Var n) =
   case Map.lookup n env of
